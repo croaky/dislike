@@ -19,7 +19,6 @@ type Tweet struct {
 }
 
 func main() {
-	// Load environment variables from .env file
 	err := godotenv.Load()
 	if err != nil {
 		fmt.Println("Error loading .env file")
@@ -31,12 +30,11 @@ func main() {
 	httpClient := config.Client(oauth1.NoContext, token)
 
 	twitterID := os.Getenv("TWITTER_ID")
+	likesURL := fmt.Sprintf("https://api.twitter.com/2/users/%s/liked_tweets", twitterID)
 
 	for {
-		twitterLikesURL := fmt.Sprintf("https://api.twitter.com/2/users/%s/liked_tweets", twitterID)
-
 		// Fetch likes
-		resp, err := httpClient.Get(twitterLikesURL)
+		resp, err := httpClient.Get(likesURL)
 		if err != nil {
 			fmt.Printf("Error fetching likes: %v\n", err)
 			return
@@ -78,9 +76,15 @@ func main() {
 			}
 			fmt.Printf("Deleted like for tweet: \"%s\", status code: %d\n", tweet.Text, deleteResp.StatusCode)
 
+			// Handle rate limits
 			if deleteResp.StatusCode == http.StatusTooManyRequests {
 				fmt.Println("Rate limit exceeded. Waiting for reset...")
-				resetTime := getRateLimitResetTime(deleteResp)
+				var resetTime time.Time
+				resetTimestamp, err := strconv.ParseInt(deleteResp.Header.Get("x-rate-limit-reset"), 10, 64)
+				if err != nil {
+					fmt.Printf("Error parsing rate limit reset time: %v\n", err)
+				}
+				resetTime = time.Unix(resetTimestamp, 0)
 				timeToWait := time.Until(resetTime)
 				fmt.Printf("Waiting for %v\n", timeToWait)
 				time.Sleep(timeToWait)
@@ -89,13 +93,4 @@ func main() {
 			deleteResp.Body.Close()
 		}
 	}
-}
-
-func getRateLimitResetTime(resp *http.Response) time.Time {
-	resetTimestamp, err := strconv.ParseInt(resp.Header.Get("x-rate-limit-reset"), 10, 64)
-	if err != nil {
-		fmt.Printf("Error parsing rate limit reset time: %v\n", err)
-		return time.Now().Add(time.Minute) // Default to waiting 1 minute if parsing fails
-	}
-	return time.Unix(resetTimestamp, 0)
 }
